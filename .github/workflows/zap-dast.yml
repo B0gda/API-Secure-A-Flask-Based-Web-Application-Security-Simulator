@@ -22,11 +22,23 @@ jobs:
         with:
           python-version: "3.12"
 
+      # FIX: requirements может лежать не в корне или называться иначе
       - name: Install app deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r Requirements.txt
-          pip install flask-sqlalchemy
+
+          if [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt
+          elif [ -f "Requirements.txt" ]; then
+            pip install -r Requirements.txt
+          elif [ -f "secure_API/requirements.txt" ]; then
+            pip install -r secure_API/requirements.txt
+          elif [ -f "secure_API/Requirements.txt" ]; then
+            pip install -r secure_API/Requirements.txt
+          else
+            echo "requirements file not found, installing minimal deps"
+            pip install flask flask-sqlalchemy bleach flask-limiter requests
+          fi
 
       - name: Run Flask app (background)
         run: |
