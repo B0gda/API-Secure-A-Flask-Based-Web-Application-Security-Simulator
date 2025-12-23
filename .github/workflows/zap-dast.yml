@@ -22,11 +22,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      # FIX: requirements может лежать не в корне или называться иначе
       - name: Install app deps
         run: |
           python -m pip install --upgrade pip
 
+          # Сначала ставим requirements если он есть
           if [ -f "requirements.txt" ]; then
             pip install -r requirements.txt
           elif [ -f "Requirements.txt" ]; then
@@ -36,19 +36,42 @@ jobs:
           elif [ -f "secure_API/Requirements.txt" ]; then
             pip install -r secure_API/Requirements.txt
           else
-            echo "requirements file not found, installing minimal deps"
-            pip install flask flask-sqlalchemy bleach flask-limiter requests
+            echo "requirements file not found, continue with minimal deps"
           fi
 
-      - name: Run Flask app (background)
+          # Критичные зависимости для запуска secure_API/file1.py ставим ВСЕГДА
+          pip install flask flask-sqlalchemy sqlalchemy bleach flask-limiter requests
+
+      - name: Run Flask app (background) and wait
         run: |
-          nohup python secure_API/file1.py > flask.log 2>&1 &
-          echo "Started Flask, waiting..."
-          for i in {1..30}; do
-            curl -sSf http://127.0.0.1:5000/ > /dev/null && break
+          # Запускаем сервер и сохраняем PID
+          nohup python -u secure_API/file1.py > flask.log 2>&1 & echo $! > flask.pid
+          echo "Started Flask PID=$(cat flask.pid), waiting for http://127.0.0.1:5000/"
+
+          # Ждем, пока поднимется
+          for i in {1..40}; do
+            if curl -sSf http://127.0.0.1:5000/ > /dev/null; then
+              echo "Flask is up"
+              exit 0
+            fi
+
+            # Если процесс уже умер, печатаем лог и падаем
+            if ! ps -p "$(cat flask.pid)" > /dev/null; then
+              echo "Flask process exited early. Printing flask.log:"
+              echo "--------------------------------------------"
+              cat flask.log || true
+              echo "--------------------------------------------"
+              exit 1
+            fi
+
             sleep 2
           done
-          curl -sSf http://127.0.0.1:5000/ > /dev/null
+
+          echo "Timeout waiting for Flask. Printing flask.log:"
+          echo "--------------------------------------------"
+          cat flask.log || true
+          echo "--------------------------------------------"
+          exit 1
 
       - name: ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.14.0
